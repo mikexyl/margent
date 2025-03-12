@@ -1,0 +1,42 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "config-Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
+        "aria_viz_DIR": "${sourceDir}/../aria_viz/build",
+        "GTSAM_DIR": "${sourceDir}/../gtsam/build/original",
+        "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache"
+      }
+    },
+    {
+      "name": "config-Debug",
+      "inherits": "config-Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-Release",
+      "configurePreset": "config-Release",
+      "jobs": 3
+    },
+    {
+      "name": "build-Debug",
+      "configurePreset": "config-Debug",
+      "jobs": 12
+    }
+  ]
+}
