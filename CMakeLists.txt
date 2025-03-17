@@ -7,12 +7,13 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-add_definitions(-march=native)
+add_definitions(-march=native -Wno-sign-compare)
 
 find_package(GTSAM REQUIRED)
 find_package(TBB 4.4 COMPONENTS tbb tbbmalloc)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(aria_viz REQUIRED)
+find_package(absl REQUIRED)
 
 set(DEPENDENCIES
         PUBLIC
@@ -20,6 +21,7 @@ set(DEPENDENCIES
         TBB::tbb TBB::tbbmalloc
         gtsam 
         aria_viz
+        absl::flags
 )
 
 add_library(${PROJECT_NAME} SHARED src/subtree_search.cpp)
