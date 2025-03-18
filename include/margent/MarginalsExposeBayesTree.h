@@ -9,4 +9,7 @@ class MarginalsExposeBayesTree : public Marginals {
       : Marginals(graph, values) {}
 
   const GaussianBayesTree& getBayesTree() const { return bayesTree_; }
+  void setBayesTree(const GaussianBayesTree& bayesTree) {
+    bayesTree_ = bayesTree;
+  }
 };

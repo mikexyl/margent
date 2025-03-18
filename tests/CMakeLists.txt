@@ -16,4 +16,4 @@ target_link_libraries(test_gbp_marg ${PROJECT_NAME} Boost::program_options)
 
 add_executable(test_CLT test_CLT.cpp)
 target_include_directories(test_CLT PRIVATE ${INCLUDES})
-target_link_libraries(test_CLT ${PROJECT_NAME} Boost::program_options)
+target_link_libraries(test_CLT ${PROJECT_NAME})
