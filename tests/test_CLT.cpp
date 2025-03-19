@@ -7,6 +7,7 @@
 #include <gtsam/nonlinear/GaussNewtonOptimizer.h>
 #include <gtsam/slam/dataset.h>
 
+#include <Eigen/Sparse>
 #include <chrono>
 #include <iostream>
 #include <limits>
@@ -97,52 +98,38 @@ ChowLiuTreeResult buildChowLiuTree(const Matrix& infoMatrix,
     }
   }
 
-  // Prim's Algorithm to find Maximum-Weight Spanning Tree (MWST)
   std::vector<std::pair<size_t, size_t>> treeEdges;
-  std::vector<bool> inTree(numPoses, false);
-  std::vector<double> maxWeight(numPoses,
-                                -std::numeric_limits<double>::infinity());
-  std::vector<size_t> parent(numPoses, -1);
-  double totalMutualInformation = 0.0;  // Store MI sum from CLT
+  std::vector<bool> inChain(numPoses, false);
+  std::vector<size_t> chainOrder;  // Stores the order of nodes in the chain
+  double totalMutualInformation = 0.0;
 
-  // Start from node 0
-  maxWeight[0] = 0;
-  inTree[0] = true;
+  // Start from a random node
+  size_t startNode = 0;  // You can use rand() % numPoses for randomness
+  inChain[startNode] = true;
+  chainOrder.push_back(startNode);
 
-  // Initialize maxWeight values with direct MI connections
-  for (size_t v = 0; v < numPoses; ++v) {
-    maxWeight[v] = MI[0][v];
-    parent[v] = 0;
-  }
+  // Extend the chain step by step
+  for (size_t count = 1; count < numPoses; ++count) {
+    size_t bestNextNode = -1;
+    double bestMI = -std::numeric_limits<double>::infinity();
 
-  for (size_t count = 0; count < numPoses - 1; ++count) {
-    // Find node with max MI that is not yet in the tree
-    size_t maxNode = -1;
-    double maxValue = -std::numeric_limits<double>::infinity();
+    // Find the best extension from the last node in the chain
+    size_t lastNode = chainOrder.back();
     for (size_t v = 0; v < numPoses; ++v) {
-      if (!inTree[v] && maxWeight[v] > maxValue) {
-        maxValue = maxWeight[v];
-        maxNode = v;
+      if (!inChain[v] && MI[lastNode][v] > bestMI) {
+        bestMI = MI[lastNode][v];
+        bestNextNode = v;
       }
     }
 
-    // Mark as in the tree
-    if (maxNode == static_cast<size_t>(-1)) {
-      break;  // Prevent accessing invalid node
-    }
-    inTree[maxNode] = true;
-    if (parent[maxNode] != static_cast<size_t>(-1)) {
-      treeEdges.emplace_back(parent[maxNode], maxNode);
-      totalMutualInformation += maxWeight[maxNode];  // Sum MI of selected edges
-    }
+    // If no valid connection found (disconnected graph), break
+    if (bestNextNode == static_cast<size_t>(-1)) break;
 
-    // Update adjacent nodes
-    for (size_t v = 0; v < numPoses; ++v) {
-      if (!inTree[v] && MI[maxNode][v] > maxWeight[v]) {
-        maxWeight[v] = MI[maxNode][v];
-        parent[v] = maxNode;
-      }
-    }
+    // Add to chain
+    inChain[bestNextNode] = true;
+    chainOrder.push_back(bestNextNode);
+    treeEdges.emplace_back(lastNode, bestNextNode);
+    totalMutualInformation += bestMI;
   }
 
   static constexpr double kMinLostMI = 0.0;
@@ -231,7 +218,8 @@ GaussianFactorGraph extractPairwiseConditionals(
 }
 
 void applyChowLiuApproximation(
-    Eigen::Ref<Eigen::MatrixXd>& R,  // Explicit reference type
+    Eigen::Ref<Eigen::MatrixXd>& R,
+    Eigen::Ref<Eigen::MatrixXd>& S,
     const std::vector<std::pair<size_t, size_t>>& chowLiuEdges,
     size_t dim) {
   size_t totalVars = R.rows() / dim;
@@ -240,12 +228,26 @@ void applyChowLiuApproximation(
   std::set<std::pair<size_t, size_t>> edgeSet(chowLiuEdges.begin(),
                                               chowLiuEdges.end());
 
-  // Zero out non-selected edges in the Hessian
+  // Zero out non-selected edges in the Hessian (R)
   for (size_t i = 0; i < totalVars; ++i) {
     for (size_t j = 0; j < totalVars; ++j) {
-      if (i != j && (edgeSet.find({i, j}) == edgeSet.end() and
+      if (i != j && (edgeSet.find({i, j}) == edgeSet.end() &&
                      edgeSet.find({j, i}) == edgeSet.end())) {
         R.block(i * dim, j * dim, dim, dim).setZero();
+      }
+    }
+  }
+
+  // return is S's cols is 0
+  if (S.cols() == 0) return;
+
+  // Zero out non-selected edges in the Schur complement (S)
+  size_t remainingVars = S.rows() / dim;  // Remaining variables in S
+  for (size_t i = 0; i < remainingVars; ++i) {
+    for (size_t j = 0; j < remainingVars; ++j) {
+      if (i != j && (edgeSet.find({i, j}) == edgeSet.end() &&
+                     edgeSet.find({j, i}) == edgeSet.end())) {
+        S.block(i * dim, j * dim, dim, dim).setZero();
       }
     }
   }
@@ -329,12 +331,21 @@ GaussianBayesTreeClique::shared_ptr processClique(
     std::cout << fmt::format("  {}\n", *gaussianConditional);
   }
   Matrix Ab = conditional->augmentedJacobianUnweighted();
+
   // get ref block of R matrix
   Eigen::Ref<Matrix> R = Ab.block(0, 0, Ab.rows(), conditional->R().cols());
-  applyChowLiuApproximation(R, chowLiuTree.treeEdges, poseDim);
+  Eigen::Ref<Matrix> S = Ab.block(0,
+                                  conditional->R().cols(),
+                                  Ab.rows(),
+                                  Ab.cols() - conditional->R().cols() - 1);
+  // print S dims
+  std::cout << fmt::format("S dims: {}x{}\n", S.rows(), S.cols());
+  applyChowLiuApproximation(R, S, chowLiuTree.treeEdges, poseDim);
+  // sparse the R matrix
+  Eigen::SparseMatrix<double> AbSparse = Ab.sparseView();
 
   // rebuild the clique
-  return buildNewClique(*clique, Ab);
+  return buildNewClique(*clique, AbSparse);
 }
 
 int main() {
@@ -373,6 +384,18 @@ int main() {
             "Child clique not found in sparsified cliques");
       newClique->children.push_back(sparsified_cliques[child]);
     }
+  }
+
+  // print the density of the sparse bayes tree' cliques's R matrix
+  for (const auto& [_, clique] : sparsified_cliques) {
+    std::cout << fmt::format("Clique: \n  {}\n", *clique);
+    std::cout << "Density of R matrix:\n";
+    printMatrixDensity(clique->conditional()->R());
+    // print the number of its non-zero elements
+    std::cout << fmt::format(
+        "Ratio of non-zero elements: {}\n",
+        clique->conditional()->R().nonZeros() /
+            static_cast<double>(clique->conditional()->R().size()));
   }
 
   // print the sparsified tree
