@@ -22,6 +22,8 @@ set(DEPENDENCIES
         gtsam 
         aria_viz
         absl::flags
+        absl::flags_parse
+        absl::flags_usage
 )
 
 add_library(${PROJECT_NAME} SHARED src/subtree_search.cpp)

@@ -17,3 +17,7 @@ target_link_libraries(test_gbp_marg ${PROJECT_NAME} Boost::program_options)
 add_executable(test_CLT test_CLT.cpp)
 target_include_directories(test_CLT PRIVATE ${INCLUDES})
 target_link_libraries(test_CLT ${PROJECT_NAME})
+
+add_executable(test_marginal_compare test_marginal_compare.cpp)
+target_include_directories(test_marginal_compare PRIVATE ${INCLUDES})
+target_link_libraries(test_marginal_compare ${PROJECT_NAME})
